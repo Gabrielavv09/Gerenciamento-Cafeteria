@@ -7,7 +7,7 @@ Projeto CRUD (Create, Read, Update, Delete) feito em JAVA para gestão do catál
 ## Funcionalidades Implementadas (CRUD Completo)
 
 * **Cadastro:** Inserção de novos produtos
-* * **Listagem:** Exibição de todos os produtos 
+* **Listagem:** Exibição de todos os produtos 
 * **Edição/Atualização:** Modificação de registros existentes
 * **Exclusão:** Remoção de produtos individualmente
 * **Pesquisa:** Busca por produtos 
