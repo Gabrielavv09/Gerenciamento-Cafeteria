@@ -6,7 +6,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes; // Para mensagens de feedback
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import jakarta.servlet.http.HttpSession; // Essencial para gerenciar a sessão e o filtro
 import java.util.List;
 
 @Controller
@@ -16,19 +17,41 @@ public class ProdutoController {
     @Autowired
     private ProdutoService produtoService;
 
-    // LISTAGEM e PESQUISA
+    // --- 1. LISTAGEM e PESQUISA (Com Persistência de Filtro na Sessão) ---
 
-    // Requisito: Listagem e Pesquisa.
     @GetMapping("/listar")
     public String listarProdutos(@RequestParam(value = "termoBusca", required = false) String termoBusca,
-                                 Model model) {
+                                 Model model,
+                                 HttpSession session) {
+
+        // REQUISITO: PROTEGER PÁGINAS (Verificação de Login)
+        if (session.getAttribute("usuarioLogado") == null) {
+            return "redirect:/login";
+        }
 
         List<Produto> produtos;
+        String termoFinal = termoBusca;
 
-        // Lógica de Pesquisa: Se houver termo, pesquisa; senão, lista tudo.
-        if (termoBusca != null && !termoBusca.isEmpty()) {
-            produtos = produtoService.pesquisarPorNome(termoBusca);
-            model.addAttribute("termoBusca", termoBusca);
+        // LÓGICA DE FILTRO PERSISTENTE: Restaura o filtro da sessão se o termo da URL for nulo.
+        if (termoBusca != null) {
+            // Se o termo veio da URL, atualiza a sessão ou limpa.
+            if (termoBusca.isEmpty()) {
+                session.removeAttribute("filtroBusca");
+            } else {
+                session.setAttribute("filtroBusca", termoBusca);
+            }
+        } else if (session.getAttribute("filtroBusca") != null) {
+            // Se o termo NÃO veio da URL, mas existe um filtro SALVO na sessão, restaura-o.
+            termoFinal = (String) session.getAttribute("filtroBusca");
+        } else {
+            // Não há termo em lugar nenhum.
+            termoFinal = null;
+        }
+
+        // Processamento da Pesquisa
+        if (termoFinal != null && !termoFinal.isEmpty()) {
+            produtos = produtoService.pesquisarPorNome(termoFinal);
+            model.addAttribute("termoBusca", termoFinal);
         } else {
             produtos = produtoService.listarTodos();
         }
@@ -37,19 +60,25 @@ public class ProdutoController {
         return "listaProdutos";
     }
 
-    // CADASTRO e EDIÇÃO
+    // --- 2. CADASTRO e EDIÇÃO - Exibir Formulário ---
 
-    // Requisito de Exibir formulário de Cadastro ou Edição, dependendo se o 'id' existe na URL.
     @GetMapping({"/novo", "/editar/{id}"})
-    public String exibirFormulario(Model model, @PathVariable(required = false) Long id) {
+    public String exibirFormulario(Model model,
+                                   @PathVariable(required = false) Long id,
+                                   HttpSession session) {
+
+        // REQUISITO: PROTEGER PÁGINAS
+        if (session.getAttribute("usuarioLogado") == null) {
+            return "redirect:/login";
+        }
 
         if (id != null) {
-            // Modo Edição: Busca o produto no Service para pré-preencher o formulário
+            // Modo Edição: Busca o produto no Service
             try {
                 Produto produto = produtoService.buscarPorId(id);
                 model.addAttribute("produto", produto);
             } catch (IllegalArgumentException e) {
-                // O Erro: Produto não encontrado para edição
+                // Erro: Produto não encontrado
                 model.addAttribute("mensagemErro", "Erro: " + e.getMessage());
                 return "redirect:/produtos/listar";
             }
@@ -58,24 +87,29 @@ public class ProdutoController {
             model.addAttribute("produto", new Produto());
         }
 
-        return "cadastroProduto"; // Retorna o formulário único para ambos os modos
+        return "cadastroProduto"; // Retorna o formulário único
     }
 
-    //SALVAR
+    // --- 3. SALVAR (Create e Update) ---
 
-    /**
-     * Rota ÚNICA para salvar novo produto E atualizar produto existente.
-     * A lógica de UPDATE vs INSERT é feita pelo JPA no Service.
-     */
     @PostMapping("/salvar")
-    public String salvarProduto(@ModelAttribute Produto produto, RedirectAttributes ra) {
+    public String salvarProduto(@ModelAttribute Produto produto,
+                                RedirectAttributes ra,
+                                HttpSession session) {
+
+        // REQUISITO: PROTEGER PÁGINAS
+        if (session.getAttribute("usuarioLogado") == null) {
+            return "redirect:/login";
+        }
+
         try {
+            // O Service fará a validação de estoque/preço e o JPA fará INSERT ou UPDATE
             produtoService.salvarProduto(produto);
             ra.addFlashAttribute("mensagemSucesso", "Produto salvo com sucesso!");
 
             return "redirect:/produtos/listar";
         } catch (IllegalArgumentException e) {
-            // Tratamento de Erro: Volta para o formulário de origem com a mensagem de erro
+            // Tratamento de Erro (Validação): Volta para o formulário com a mensagem de erro
             ra.addFlashAttribute("mensagemErro", "Erro ao salvar: " + e.getMessage());
 
             if (produto.getId() != null) {
@@ -86,17 +120,23 @@ public class ProdutoController {
         }
     }
 
-    // EXCLUSÃO (Delete)
+    // --- 4. EXCLUSÃO (Delete) ---
 
-    /**
-     * Requisito: Exclusão - Remove um registro.
-     */
     @GetMapping("/excluir/{id}")
-    public String excluirProduto(@PathVariable Long id, RedirectAttributes ra) {
+    public String excluirProduto(@PathVariable Long id,
+                                 RedirectAttributes ra,
+                                 HttpSession session) {
+
+        // REQUISITO: PROTEGER PÁGINAS
+        if (session.getAttribute("usuarioLogado") == null) {
+            return "redirect:/login";
+        }
+
         try {
             produtoService.excluirProduto(id);
             ra.addFlashAttribute("mensagemSucesso", "Produto excluído com sucesso!");
         } catch (IllegalArgumentException e) {
+            // Tratamento de Erro: Caso o ID não exista para exclusão
             ra.addFlashAttribute("mensagemErro", "Erro ao excluir: " + e.getMessage());
         }
         return "redirect:/produtos/listar";
